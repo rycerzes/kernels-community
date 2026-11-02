@@ -1,0 +1,19 @@
+[general]
+name = "ffpa-attn"
+version = 1
+edition = 6
+license = "Apache-2.0"
+upstream = "https://github.com/xlite-dev/ffpa-attn.git"
+backends = ["cuda"]
+python-depends = ["tvm-ffi"]
+
+[general.cuda]
+minver = "12.8"
+python-depends = ["nvidia-cutlass-dsl"]
+
+[general.hub]
+repo-id = "kernels-community/ffpa-attn"
+
+[torch-noarch]
+# The Triton backend ships per-GPU autotune configs (triton/configs/*.json).
+pyext = ["py", "pyi", "json"]
