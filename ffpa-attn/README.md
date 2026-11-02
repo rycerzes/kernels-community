@@ -33,6 +33,8 @@ out = ffpa_attn.ffpa_attn_func(q, k, v, is_causal=True, enable_gqa=True, backend
 `ffpa_attn_varlen_func(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, ...)` takes packed
 `(tokens, heads, head_dim)` inputs, with the FlashAttention varlen calling convention.
 
+On SM80/SM89, the varlen path currently needs equal query and KV head counts: upstream enables its packed-GQA layout for grouped KV heads, which its SM80/SM89 forward does not support.
+
 ## Benchmarks
 
 H200, PyTorch 2.15, bf16, 8 query heads and 2 KV heads at head_dim 512 (the full-attention layers of

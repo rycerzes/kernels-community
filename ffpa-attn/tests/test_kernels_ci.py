@@ -65,10 +65,20 @@ def test_dense_default_backend_forward():
     assert rel(ref, out) < 2e-2
 
 
-def test_varlen_cutedsl_forward_backward():
+hopper_or_newer = supported and torch.cuda.get_device_capability()[0] >= 9
+
+
+@pytest.mark.parametrize("hkv", [
+    HQ,
+    pytest.param(HKV, marks=pytest.mark.xfail(
+        not hopper_or_newer, strict=True, raises=NotImplementedError,
+        reason="upstream: ffpa_attn_varlen_func turns pack_gqa on for grouped KV heads, which the SM80/SM89 "
+               "forward rejects")),
+])
+def test_varlen_cutedsl_forward_backward(hkv):
     lens = [128, 256, 192]
     t = sum(lens)
-    q, k, v, g = inputs((t, HQ, D), (t, HKV, D))
+    q, k, v, g = inputs((t, HQ, D), (t, hkv, D))
     cu = torch.tensor([0, 128, 384, 576], device="cuda", dtype=torch.int32)
 
     def per_document(q, k, v):
@@ -83,7 +93,8 @@ def test_varlen_cutedsl_forward_backward():
 
     ref = fwd_bwd(per_document, q, k, v, g)
     got = fwd_bwd(lambda q, k, v: ffpa_attn.ffpa_attn_varlen_func(q, k, v, cu, cu, max(lens), max(lens),
-                                                                 softmax_scale=1.0, causal=True, enable_gqa=True),
+                                                                 softmax_scale=1.0, causal=True,
+                                                                 enable_gqa=hkv != HQ),
                   *(x.bfloat16() for x in (q, k, v, g)))
     for name, r, x in zip(("out", "dq", "dk", "dv"), ref, got):
         assert rel(r, x) < 2e-2, name
