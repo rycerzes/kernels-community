@@ -1,7 +1,8 @@
-"""Fast smoke tests for the kernels-community CI runner (an sm89 L4).
+"""Tests at head_dim 512 with grouped KV heads, the case ffpa-attn exists for (e.g. the full-attention layers
+of Gemma 4). Each bf16 result is compared with an fp32 SDPA reference on the same inputs.
 
-Small shapes at head_dim 512 with grouped KV heads, the case ffpa-attn exists for (e.g. the full-attention
-layers of Gemma 4). Each bf16 result is compared with an fp32 SDPA reference on the same inputs.
+Most of the time on the first call is CuTe DSL JIT compilation (about 30 s per kernel pair on an L4), so only a
+subset is marked `kernels_ci` to keep the CI runner (an sm89 L4) under a minute.
 """
 
 import kernels
@@ -12,10 +13,7 @@ import torch.nn.functional as F
 ffpa_attn = kernels.get_kernel("kernels-community/ffpa-attn", version=1)
 
 supported = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8
-pytestmark = [
-    pytest.mark.kernels_ci,
-    pytest.mark.skipif(not supported, reason="ffpa-attn needs a CUDA device with compute capability >= 8.0"),
-]
+pytestmark = pytest.mark.skipif(not supported, reason="ffpa-attn needs a CUDA device with compute capability >= 8.0")
 
 HQ, HKV, D = 8, 2, 512
 
@@ -47,7 +45,7 @@ def inputs(shape_q, shape_kv, seed=0):
     return q, k, v, g
 
 
-@pytest.mark.parametrize("causal", [True, False])
+@pytest.mark.parametrize("causal", [pytest.param(True, marks=pytest.mark.kernels_ci), False])
 def test_dense_cutedsl_forward_backward(causal):
     q, k, v, g = inputs((1, HQ, 384, D), (1, HKV, 384, D))
     ref = fwd_bwd(lambda q, k, v: reference(q, k, v, causal, 1.0), q, k, v, g)
@@ -58,6 +56,7 @@ def test_dense_cutedsl_forward_backward(causal):
         assert rel(r, x) < 2e-2, name
 
 
+@pytest.mark.kernels_ci
 def test_dense_default_backend_forward():
     q, k, v, _ = inputs((1, HQ, 256, D), (1, HKV, 256, D))
     ref = reference(q, k, v, True, None)
@@ -70,10 +69,10 @@ hopper_or_newer = supported and torch.cuda.get_device_capability()[0] >= 9
 
 @pytest.mark.parametrize("hkv", [
     HQ,
-    pytest.param(HKV, marks=pytest.mark.xfail(
+    pytest.param(HKV, marks=[pytest.mark.kernels_ci, pytest.mark.xfail(
         not hopper_or_newer, strict=True, raises=NotImplementedError,
         reason="upstream: ffpa_attn_varlen_func turns pack_gqa on for grouped KV heads, which the SM80/SM89 "
-               "forward rejects")),
+               "forward rejects")]),
 ])
 def test_varlen_cutedsl_forward_backward(hkv):
     lens = [128, 256, 192]
@@ -100,6 +99,7 @@ def test_varlen_cutedsl_forward_backward(hkv):
         assert rel(r, x) < 2e-2, name
 
 
+@pytest.mark.kernels_ci
 def test_varlen_rejects_sliding_window():
     q, k, v, _ = inputs((128, HQ, D), (128, HKV, D))
     cu = torch.tensor([0, 128], device="cuda", dtype=torch.int32)
